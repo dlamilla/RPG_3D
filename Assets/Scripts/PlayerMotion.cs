@@ -2,22 +2,36 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Cinemachine;
 
 public class PlayerMotion : MonoBehaviour
 {
+    [Header("Camaras")]
     public Transform cam;
+    public CinemachineFreeLook cinemachineFreeLook;
+    public GameObject targetCam;
+
+    [Header("Movimiento")]
     public float speed;
     public float speedRotation = 10;
-    public float groundDistanceUp, groundDistance;
-    public float jumpPower = 35;
+
+    [Header("Salto")]
+    public float groundDistanceUp;
+    public float groundDistance;
     public float gravity = 9.8f;
     public float gravityMultiplayer = 1;
+    public float jumpPower = 35;
     public bool onGround, isJump;
     public bool stop;
     public LayerMask groundLayer;
+
+    [Header("Mov. Camara")]
+    public float rotationSpeedCamX;
+    public float rotationSpeedCamY;
+
     Rigidbody rb;
     Animator anim;
-    Vector2 _move;  //Player Input
+    Vector2 _move, m_look;  //Player Input
     Vector3 move;   //Move player
     private void Awake()
     {
@@ -36,7 +50,7 @@ public class PlayerMotion : MonoBehaviour
     {
         
     }
-    private void FixedUpdate()
+    private void FixedUpdate() 
     {
         onGround = Physics.CheckSphere(transform.position + (Vector3.up * groundDistanceUp), groundDistance, groundLayer);
 
@@ -122,6 +136,14 @@ public class PlayerMotion : MonoBehaviour
         }
         anim.SetBool("OnAir", true);
     }
+
+    public void OnCam(InputValue value)
+    {
+        m_look = value.Get<Vector2>();
+        cinemachineFreeLook.m_XAxis.Value += m_look.x * rotationSpeedCamX;
+        cinemachineFreeLook.m_YAxis.Value += m_look.y * rotationSpeedCamY * Time.fixedDeltaTime;
+    }
+
     public void FallEnd()
     {
         StopEnd();
