@@ -10,10 +10,18 @@ public class PlayerMotion : MonoBehaviour
     public Transform cam;
     public CinemachineFreeLook cinemachineFreeLook;
     public GameObject targetCam;
+    public CinemachineVirtualCamera virtualCamera;
+    public bool focus;
+
+    [Header("zTarget")]
+    public Transform targetPlayer;
+    public Transform follow;
 
     [Header("Movimiento")]
     public float speed;
     public float speedRotation = 10;
+    public float maxSlopeAngle = 40f;
+    public float playerHeight = 0.2f;
 
     [Header("Salto")]
     public float groundDistanceUp;
@@ -33,10 +41,14 @@ public class PlayerMotion : MonoBehaviour
     Animator anim;
     Vector2 _move, m_look;  //Player Input
     Vector3 move;   //Move player
+    float slopeAngle;
+    RaycastHit slopeHit;
+    zTarget zTarget;
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         anim = GetComponentInChildren<Animator>();
+        zTarget = GetComponent<zTarget>();
     }
 
     // Start is called before the first frame update
@@ -52,9 +64,12 @@ public class PlayerMotion : MonoBehaviour
     }
     private void FixedUpdate() 
     {
+        bool onSlope = OnSlope();
+        rb.useGravity = !onSlope;
+        groundDistanceUp = (onSlope) ? -0.2f : 0.2f;
         onGround = Physics.CheckSphere(transform.position + (Vector3.up * groundDistanceUp), groundDistance, groundLayer);
 
-        if (!onGround)
+        if (!onGround && !onSlope)
         {
             rb.AddForce(-gravity * gravityMultiplayer * Vector3.up, ForceMode.Acceleration);
         }
@@ -73,26 +88,42 @@ public class PlayerMotion : MonoBehaviour
             anim.SetTrigger("Fall");
         }
 
+        if (focus)
+        {
+            UpdateFocus();
+        }
+
         if (stop)
         {
             return;
         }
-
-        if (_move.x != 0 || _move.y != 0)
+        if (!focus)
+        {
+            if (_move.x != 0 || _move.y != 0)
+            {
+                move = cam.forward * _move.y;
+                move += cam.right * _move.x;
+                move.Normalize();
+                move.y = 0;
+                rb.velocity = (onSlope) ? GetSlopeMoveDirection() * speed : move * speed;
+                Vector3 dir = cam.forward * _move.y;
+                dir += cam.right * _move.x;
+                dir.Normalize();
+                dir.y = 0;
+                Quaternion targetR = Quaternion.LookRotation(dir);
+                Quaternion playerR = Quaternion.Slerp(transform.rotation, targetR, speedRotation * Time.fixedDeltaTime);
+                transform.rotation = playerR;
+            }
+        }
+        else
         {
             move = cam.forward * _move.y;
             move += cam.right * _move.x;
             move.Normalize();
             move.y = 0;
-            rb.velocity = move * speed;
-            Vector3 dir = cam.forward * _move.y;
-            dir += cam.right * _move.x;
-            dir.Normalize();
-            dir.y = 0;
-            Quaternion targetR = Quaternion.LookRotation(dir);
-            Quaternion playerR = Quaternion.Slerp(transform.rotation, targetR, speedRotation * Time.fixedDeltaTime);
-            transform.rotation = playerR;
+            rb.velocity = (onSlope) ? GetSlopeMoveDirection() * speed : move * speed;
         }
+        
     }
 
     public void OnMove(InputValue value)
@@ -112,6 +143,21 @@ public class PlayerMotion : MonoBehaviour
         }
         anim.SetFloat("MoveX", _move.x);
         anim.SetFloat("MoveY", _move.y);
+    }
+
+    public bool OnSlope()
+    {
+        if (Physics.Raycast(transform.position,Vector3.down, out slopeHit, playerHeight) && onGround)
+        {
+            slopeAngle = Vector3.Angle(Vector3.up, slopeHit.normal);
+            return slopeAngle <= maxSlopeAngle && slopeAngle != 0;
+        }
+        return false;
+    }
+
+    Vector3 GetSlopeMoveDirection()
+    {
+        return Vector3.ProjectOnPlane(move, slopeHit.normal).normalized;
     }
 
     public void OnJump()
@@ -144,6 +190,90 @@ public class PlayerMotion : MonoBehaviour
         cinemachineFreeLook.m_YAxis.Value += m_look.y * rotationSpeedCamY * Time.fixedDeltaTime;
     }
 
+    public void OnChangeTargetL()
+    {
+        if (targetPlayer == null)
+        {
+            return;
+        }
+        TargetActive(false);
+        targetPlayer = zTarget.NextToLeft();
+        TargetActive(true);
+        UpdateFocus();
+    }
+
+    public void OnChangeTargetR()
+    {
+        if (targetPlayer == null)
+        {
+            return;
+        }
+        TargetActive(false);
+        targetPlayer = zTarget.NextToRight();
+        TargetActive(true);
+        UpdateFocus();
+    }
+
+    public void OnFocus(InputValue value)
+    {
+        focus = value.isPressed;
+        if (stop || isJump)
+        {
+            return;
+        }
+        isFocus();
+    }
+
+    public void isFocus()
+    {
+        if (focus)
+        {
+            if (targetPlayer == null)
+            {
+                targetPlayer = zTarget.FirtsTarger();
+            }
+
+            if (targetPlayer == null)
+            {
+                focus = false;
+                return;
+            }
+            TargetActive(true);
+            virtualCamera.Priority = 10;
+            cinemachineFreeLook.Priority = 8;
+            anim.SetBool("IsFocus", true);
+            anim.SetTrigger("Focus");
+        }
+        else
+        {
+            if (targetPlayer != null)    
+            {
+                TargetActive(false);
+            }
+            zTarget.t = null;
+            targetPlayer = null;
+            virtualCamera.Priority = 8;
+            cinemachineFreeLook.Priority = 10;
+            anim.SetBool("IsFocus", false);
+            anim.SetTrigger("SwitchWeapon");
+        }
+    }
+
+    public void UpdateFocus()
+    {
+        targetCam.transform.LookAt(targetPlayer);
+        follow.position = targetCam.transform.position;
+        follow.rotation = targetCam.transform.rotation;
+        transform.localEulerAngles = new Vector3(0, follow.localEulerAngles.y, 0);
+    }
+
+    void TargetActive(bool b)
+    {
+        if (targetPlayer.GetComponent<targetDamage>())
+        {
+            targetPlayer.GetComponent<targetDamage>().targetPoint.SetActive(b);
+        }
+    }
     public void FallEnd()
     {
         StopEnd();
@@ -170,6 +300,7 @@ public class PlayerMotion : MonoBehaviour
         anim.SetFloat("MoveY", _move.y);
         rb.velocity = Vector3.zero;
         stop = false;
+        isFocus();
     }
 
     private void OnDrawGizmosSelected()
