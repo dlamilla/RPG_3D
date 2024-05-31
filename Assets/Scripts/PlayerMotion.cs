@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Cinemachine;
+using DG.Tweening;
 
 public class PlayerMotion : MonoBehaviour
 {
@@ -22,6 +23,13 @@ public class PlayerMotion : MonoBehaviour
     public float speedRotation = 10;
     public float maxSlopeAngle = 40f;
     public float playerHeight = 0.2f;
+
+    [Header("Roll")]
+    [SerializeField] private float rollPower;
+    [SerializeField] private float dodgePower;
+    [SerializeField] private float rollMultiplayer;
+    [SerializeField] private bool isRoll;
+
 
     [Header("Salto")]
     public float groundDistanceUp;
@@ -44,6 +52,7 @@ public class PlayerMotion : MonoBehaviour
     float slopeAngle;
     RaycastHit slopeHit;
     zTarget zTarget;
+    Sequence s;
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -54,15 +63,15 @@ public class PlayerMotion : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        
+
     }
 
     // Update is called once per frame
     void Update()
     {
-        
+
     }
-    private void FixedUpdate() 
+    private void FixedUpdate()
     {
         bool onSlope = OnSlope();
         rb.useGravity = !onSlope;
@@ -123,7 +132,7 @@ public class PlayerMotion : MonoBehaviour
             move.y = 0;
             rb.velocity = (onSlope) ? GetSlopeMoveDirection() * speed : move * speed;
         }
-        
+
     }
 
     public void OnMove(InputValue value)
@@ -147,7 +156,7 @@ public class PlayerMotion : MonoBehaviour
 
     public bool OnSlope()
     {
-        if (Physics.Raycast(transform.position,Vector3.down, out slopeHit, playerHeight) && onGround)
+        if (Physics.Raycast(transform.position, Vector3.down, out slopeHit, playerHeight) && onGround)
         {
             slopeAngle = Vector3.Angle(Vector3.up, slopeHit.normal);
             return slopeAngle <= maxSlopeAngle && slopeAngle != 0;
@@ -163,24 +172,83 @@ public class PlayerMotion : MonoBehaviour
     public void OnJump()
     {
         Stopping();
-        isJump = true;
-        Vector2 movDir = _move;
-        anim.SetTrigger("Jumping");
-        if (movDir != Vector2.zero)
+        if (focus)
         {
-            Vector3 dir = cam.forward * movDir.y;
-            dir += cam.right * movDir.x;
-            dir.Normalize();
-            dir.y = 0;
-            Quaternion targetR = Quaternion.LookRotation(dir);
-            transform.rotation = targetR;
-            rb.AddForce((transform.forward + Vector3.up) * jumpPower, ForceMode.Impulse);
+            if (_move.x != 0 || _move.y != 0)
+            {
+                if (Mathf.Abs(_move.x) > Mathf.Abs(_move.y))
+                {
+                    _move.y = 0;
+                }
+                else if (Mathf.Abs(_move.y) > Mathf.Abs(_move.x))
+                {
+                    _move.x = 0;
+                }
+                else if (Mathf.Abs(_move.y) == Mathf.Abs(_move.x))
+                {
+                    _move.y = 0;
+                }
+            }
+            else
+            {
+                rb.velocity = Vector2.zero;
+                rb.AddForce(cam.forward * rollPower, ForceMode.Impulse);
+            }
+            if (_move.x != 0)
+            {
+                _move.x = (_move.x < 0) ? -1f : 1f;
+            }
+            if (_move.y != 0)
+            {
+                _move.y = (_move.y < 0) ? -1f : 1f;
+            }
+            anim.SetFloat("MoveX", _move.x);
+            anim.SetFloat("MoveY", _move.y);
+            Vector3 move = cam.forward * _move.y;
+            move += cam.right * _move.x;
+            move.Normalize();
+            move.y = 0;
+            if (_move.x != 0)
+            {
+                rb.AddForce(move * dodgePower * rollMultiplayer, ForceMode.Impulse);
+            }
+            else
+            {
+                rb.AddForce(move * rollPower * rollMultiplayer, ForceMode.Impulse);
+            }
+            anim.SetTrigger("Jumping");
+            isRoll = true;
+            s = DOTween.Sequence();
+            s.AppendInterval(0.5f).OnComplete(() =>
+            {
+                if (isRoll)
+                {
+                    StopEnd();
+                }
+            });
         }
         else
         {
-            rb.AddForce(Vector3.up * jumpPower, ForceMode.Impulse);
+            isJump = true;
+            Vector2 movDir = _move;
+            anim.SetTrigger("Jumping");
+            if (movDir != Vector2.zero)
+            {
+                Vector3 dir = cam.forward * movDir.y;
+                dir += cam.right * movDir.x;
+                dir.Normalize();
+                dir.y = 0;
+                Quaternion targetR = Quaternion.LookRotation(dir);
+                transform.rotation = targetR;
+                rb.AddForce((transform.forward + Vector3.up) * jumpPower, ForceMode.Impulse);
+            }
+            else
+            {
+                rb.AddForce(Vector3.up * jumpPower, ForceMode.Impulse);
+            }
+            anim.SetBool("OnAir", true);
         }
-        anim.SetBool("OnAir", true);
+
     }
 
     public void OnCam(InputValue value)
@@ -246,7 +314,7 @@ public class PlayerMotion : MonoBehaviour
         }
         else
         {
-            if (targetPlayer != null)    
+            if (targetPlayer != null)
             {
                 TargetActive(false);
             }
@@ -281,6 +349,7 @@ public class PlayerMotion : MonoBehaviour
 
     void Stopping()
     {
+        isRoll = false;
         if (onGround)
         {
             rb.velocity = Vector3.zero;
@@ -298,9 +367,15 @@ public class PlayerMotion : MonoBehaviour
         anim.SetFloat("Moving", (_move.x == 0 && _move.y == 0) ? 0 : 1);
         anim.SetFloat("MoveX", _move.x);
         anim.SetFloat("MoveY", _move.y);
+        isRoll = false;
         rb.velocity = Vector3.zero;
         stop = false;
         isFocus();
+    }
+
+    public void RollStop()
+    {
+        rb.velocity = Vector3.zero;
     }
 
     private void OnDrawGizmosSelected()

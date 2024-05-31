@@ -2057,6 +2057,10 @@ MonoBehaviour:
   speedRotation: 10
   maxSlopeAngle: 40
   playerHeight: 0.2
+  rollPower: 50
+  dodgePower: 30
+  rollMultiplayer: 2
+  isRoll: 0
   groundDistanceUp: 0.2
   groundDistance: 0.4
   gravity: 9.8
