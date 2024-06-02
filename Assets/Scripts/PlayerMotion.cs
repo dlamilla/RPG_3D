@@ -41,6 +41,10 @@ public class PlayerMotion : MonoBehaviour
     public bool stop;
     public LayerMask groundLayer;
 
+    [Header("Interaction")]
+    [SerializeField] public bool interacting;
+    [SerializeField] public ItemCollision chest;
+
     [Header("Mov. Camara")]
     public float rotationSpeedCamX;
     public float rotationSpeedCamY;
@@ -139,7 +143,7 @@ public class PlayerMotion : MonoBehaviour
     {
         _move = value.Get<Vector2>();
 
-        if (stop)
+        if (stop || interacting)
         {
             return;
         }
@@ -253,9 +257,21 @@ public class PlayerMotion : MonoBehaviour
 
     public void OnCam(InputValue value)
     {
+        if (interacting)
+        {
+            return;
+        }
         m_look = value.Get<Vector2>();
         cinemachineFreeLook.m_XAxis.Value += m_look.x * rotationSpeedCamX;
         cinemachineFreeLook.m_YAxis.Value += m_look.y * rotationSpeedCamY * Time.fixedDeltaTime;
+    }
+
+    public void OnUse(){
+        if (chest)
+        {
+            chest.Open();
+            return;
+        }
     }
 
     public void OnChangeTargetL()
@@ -280,6 +296,23 @@ public class PlayerMotion : MonoBehaviour
         targetPlayer = zTarget.NextToRight();
         TargetActive(true);
         UpdateFocus();
+    }
+
+    public void selectTarget(Transform objetive){
+        virtualCamera.Priority = 10;
+        cinemachineFreeLook.Priority = 8;
+        targetCam.transform.LookAt(objetive);
+        follow.position = targetCam.transform.position;
+        follow.rotation = targetCam.transform.rotation;
+        transform.localEulerAngles = new Vector3(0,follow.localEulerAngles.y,0);
+    }
+
+    public void noTarget(){
+        targetPlayer = null;
+        UpdateFocus();
+        virtualCamera.Priority = 8;
+        cinemachineFreeLook.Priority = 10;
+        isFocus();
     }
 
     public void OnFocus(InputValue value)
@@ -347,7 +380,7 @@ public class PlayerMotion : MonoBehaviour
         StopEnd();
     }
 
-    void Stopping()
+    public void Stopping()
     {
         isRoll = false;
         if (onGround)
